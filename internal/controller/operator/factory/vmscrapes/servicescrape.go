@@ -139,6 +139,7 @@ func generateServiceScrapeConfig(
 			},
 			{
 				{Key: "source_labels", Value: []string{"__meta_kubernetes_pod_name"}},
+				{Key: "regex", Value: "(.+)"},
 				{Key: "target_label", Value: "pod"},
 			},
 			{
@@ -165,6 +166,7 @@ func generateServiceScrapeConfig(
 			},
 			{
 				{Key: "source_labels", Value: []string{"__meta_kubernetes_pod_name"}},
+				{Key: "regex", Value: "(.+)"},
 				{Key: "target_label", Value: "pod"},
 			},
 			{

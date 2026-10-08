@@ -331,6 +331,7 @@ scrape_configs:
     target_label: pod
   - source_labels:
     - __meta_kubernetes_pod_name
+    regex: (.+)
     target_label: pod
   - source_labels:
     - __meta_kubernetes_pod_container_name
@@ -382,6 +383,7 @@ scrape_configs:
     target_label: pod
   - source_labels:
     - __meta_kubernetes_pod_name
+    regex: (.+)
     target_label: pod
   - source_labels:
     - __meta_kubernetes_pod_container_name
@@ -974,6 +976,7 @@ scrape_configs:
     target_label: pod
   - source_labels:
     - __meta_kubernetes_pod_name
+    regex: (.+)
     target_label: pod
   - source_labels:
     - __meta_kubernetes_pod_container_name
@@ -1025,6 +1028,7 @@ scrape_configs:
     target_label: pod
   - source_labels:
     - __meta_kubernetes_pod_name
+    regex: (.+)
     target_label: pod
   - source_labels:
     - __meta_kubernetes_pod_container_name
@@ -1340,6 +1344,7 @@ scrape_configs:
     target_label: pod
   - source_labels:
     - __meta_kubernetes_pod_name
+    regex: (.+)
     target_label: pod
   - source_labels:
     - __meta_kubernetes_pod_container_name
@@ -1635,6 +1640,7 @@ scrape_configs:
     target_label: pod
   - source_labels:
     - __meta_kubernetes_pod_name
+    regex: (.+)
     target_label: pod
   - source_labels:
     - __meta_kubernetes_pod_container_name

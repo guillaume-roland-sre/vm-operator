@@ -4,7 +4,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/VictoriaMetrics/VictoriaMetrics/lib/prompb"
+	"github.com/VictoriaMetrics/VictoriaMetrics/lib/promrelabel"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -133,6 +136,7 @@ relabel_configs:
   target_label: pod
 - source_labels:
   - __meta_kubernetes_pod_name
+  regex: (.+)
   target_label: pod
 - source_labels:
   - __meta_kubernetes_pod_container_name
@@ -238,6 +242,7 @@ relabel_configs:
   target_label: pod
 - source_labels:
   - __meta_kubernetes_pod_name
+  regex: (.+)
   target_label: pod
 - source_labels:
   - __meta_kubernetes_pod_container_name
@@ -343,6 +348,7 @@ relabel_configs:
   target_label: pod
 - source_labels:
   - __meta_kubernetes_pod_name
+  regex: (.+)
   target_label: pod
 - source_labels:
   - __meta_kubernetes_pod_container_name
@@ -442,6 +448,7 @@ relabel_configs:
   target_label: pod
 - source_labels:
   - __meta_kubernetes_pod_name
+  regex: (.+)
   target_label: pod
 - source_labels:
   - __meta_kubernetes_pod_container_name
@@ -951,6 +958,7 @@ relabel_configs:
   target_label: pod
 - source_labels:
   - __meta_kubernetes_pod_name
+  regex: (.+)
   target_label: pod
 - source_labels:
   - __meta_kubernetes_pod_container_name
@@ -1065,6 +1073,7 @@ relabel_configs:
   target_label: pod
 - source_labels:
   - __meta_kubernetes_pod_name
+  regex: (.+)
   target_label: pod
 - source_labels:
   - __meta_kubernetes_pod_container_name
@@ -1251,6 +1260,7 @@ relabel_configs:
   target_label: pod
 - source_labels:
   - __meta_kubernetes_pod_name
+  regex: (.+)
   target_label: pod
 - source_labels:
   - __meta_kubernetes_pod_container_name
@@ -1380,6 +1390,7 @@ relabel_configs:
   target_label: pod
 - source_labels:
   - __meta_kubernetes_pod_name
+  regex: (.+)
   target_label: pod
 - source_labels:
   - __meta_kubernetes_pod_container_name
@@ -1474,6 +1485,7 @@ relabel_configs:
   target_label: pod
 - source_labels:
   - __meta_kubernetes_pod_name
+  regex: (.+)
   target_label: pod
 - source_labels:
   - __meta_kubernetes_pod_container_name
@@ -1579,6 +1591,7 @@ relabel_configs:
   target_label: pod
 - source_labels:
   - __meta_kubernetes_pod_name
+  regex: (.+)
   target_label: pod
 - source_labels:
   - __meta_kubernetes_pod_container_name
@@ -1685,6 +1698,7 @@ relabel_configs:
   target_label: pod
 - source_labels:
   - __meta_kubernetes_pod_name
+  regex: (.+)
   target_label: pod
 - source_labels:
   - __meta_kubernetes_pod_container_name
@@ -1792,6 +1806,7 @@ relabel_configs:
   target_label: pod
 - source_labels:
   - __meta_kubernetes_pod_name
+  regex: (.+)
   target_label: pod
 - source_labels:
   - __meta_kubernetes_pod_container_name
@@ -1926,6 +1941,7 @@ relabel_configs:
   target_label: pod
 - source_labels:
   - __meta_kubernetes_pod_name
+  regex: (.+)
   target_label: pod
 - source_labels:
   - __meta_kubernetes_pod_container_name
@@ -1953,4 +1969,65 @@ oauth2:
   proxy_url: http://expected
 `,
 	})
+}
+
+func Test_generateServiceScrapeConfig_PreservesEndpointPodLabel(t *testing.T) {
+	for _, role := range []string{k8sSDRoleEndpoints, k8sSDRoleEndpointslice, k8sSDRoleLegacyEndpointslices} {
+		t.Run(role, func(t *testing.T) {
+			ctx := context.Background()
+			ac := getAssetsCache(ctx, k8stools.GetTestClientWithObjects(nil))
+			sc := &vmv1beta1.VMServiceScrape{
+				ObjectMeta: metav1.ObjectMeta{Name: "example-service", Namespace: "default"},
+				Spec:       vmv1beta1.VMServiceScrapeSpec{DiscoveryRole: role},
+			}
+			cfg, err := generateServiceScrapeConfig(ctx, &vmv1beta1.CommonScrapeParams{}, &ParsedObjects{}, sc, vmv1beta1.Endpoint{}, 0, ac)
+			require.NoError(t, err)
+			var rules any
+			for _, item := range cfg {
+				if item.Key == "relabel_configs" {
+					rules = item.Value
+				}
+			}
+			require.NotNil(t, rules)
+			data, err := yaml.Marshal(rules)
+			require.NoError(t, err)
+			parsed, err := promrelabel.ParseRelabelConfigsData(data)
+			require.NoError(t, err)
+			prefix := "__meta_kubernetes_endpoint_address_target_"
+			if role != k8sSDRoleEndpoints {
+				prefix = "__meta_kubernetes_endpointslice_address_target_"
+			}
+			for _, tc := range []struct {
+				name         string
+				kind         string
+				endpointName string
+				podName      string
+				emptyPodName bool
+				want         string
+			}{
+				{name: "missing pod metadata", kind: "Pod", endpointName: "example-pod", want: "example-pod"},
+				{name: "empty pod metadata", kind: "Pod", endpointName: "example-pod", emptyPodName: true, want: "example-pod"},
+				{name: "available pod metadata", kind: "Pod", endpointName: "example-pod", podName: "example-pod", want: "example-pod"},
+				{name: "pod metadata has precedence", kind: "Pod", endpointName: "example-endpoint-pod", podName: "example-metadata-pod", want: "example-metadata-pod"},
+				{name: "node endpoint", kind: "Node", endpointName: "example-node"},
+				{name: "empty pod reference", kind: "Pod"},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					labels := []prompb.Label{
+						{Name: prefix + "kind", Value: tc.kind},
+						{Name: prefix + "name", Value: tc.endpointName},
+					}
+					if tc.podName != "" || tc.emptyPodName {
+						labels = append(labels, prompb.Label{Name: "__meta_kubernetes_pod_name", Value: tc.podName})
+					}
+					result := parsed.Apply(labels, 0)
+					var got string
+					if label := promrelabel.GetLabelByName(result, "pod"); label != nil {
+						got = label.Value
+					}
+					assert.Equal(t, tc.want, got)
+				})
+			}
+		})
+	}
 }
